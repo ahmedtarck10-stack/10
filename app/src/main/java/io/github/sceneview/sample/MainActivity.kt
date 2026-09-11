@@ -1,5 +1,7 @@
 package io.github.sceneview.sample
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
@@ -75,6 +78,19 @@ fun MixedRealityApp() {
     var selectedMode by remember { mutableStateOf(AppMode.OBJECT) }
     var currentModel by remember { mutableStateOf<SpatialModel?>(DefaultPresets.first()) }
     val placedAnchors = remember { mutableStateListOf<PlacedAnchor>() }
+
+    // Proactively request camera permission when entering AR or MR mode
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    LaunchedEffect(selectedMode) {
+        if (selectedMode == AppMode.AR || selectedMode == AppMode.MR) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
 
     // State for bottom actions
     var isRecording by remember { mutableStateOf(false) }

@@ -1,10 +1,14 @@
 package io.github.sceneview.sample.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.util.Log
 import android.view.MotionEvent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,24 +40,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.google.android.filament.Engine
 import com.google.android.filament.gltfio.FilamentInstance
 import com.google.ar.core.Anchor
 import com.google.ar.core.Config
-import com.google.ar.core.Frame
 import com.google.ar.core.Plane
+import com.google.ar.core.TrackingFailureReason
 import com.google.ar.core.TrackingState
 import dev.romainguy.kotlin.math.Float3
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import io.github.sceneview.SceneView
 import io.github.sceneview.SurfaceType
+import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.ar.ARSceneView
-import io.github.sceneview.ar.highestResolutionCameraConfig
 import io.github.sceneview.ar.node.AnchorNode
 import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.loaders.ModelLoader
@@ -58,7 +69,6 @@ import io.github.sceneview.node.CylinderNode
 import io.github.sceneview.node.ModelNode
 import io.github.sceneview.node.SphereNode
 import io.github.sceneview.node.TorusNode
-import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
@@ -70,7 +80,7 @@ import java.io.File
 
 /**
  * AR & Mixed Reality Viewport.
- * - AR Mode: Single live camera stream + 3D model + surface reticle + tap-to-place.
+ * - AR Mode: Native ARCore session with plane detection, real 6-DOF tracking, hit testing, and AnchorNode.
  * - MR Mode: Stereoscopic Double Camera + Double 3D Model (Side-by-Side Left & Right Eye)
  *   with center dividing line for MR glasses / headsets.
  * - Cleared State: When model is cleared, no 3D model is rendered.
@@ -111,7 +121,7 @@ fun ARMRSceneView(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // AR Mode: Real Google ARCore Surface / Ground Detection View
+            // AR Mode: Native ARCore Pipeline with Plane Detection and Physical Anchoring
             SingleARScene(
                 model = activeModel,
                 placedAnchors = placedAnchors,
@@ -127,7 +137,14 @@ fun ARMRSceneView(
 }
 
 /**
- * Single Full-screen AR Scene View with ARCore Floor Surface Detection.
+ * Native Google ARCore AR Scene View.
+ * Real AR pipeline:
+ * 1. ARCore Session lifecycle & camera stream.
+ * 2. 6-DOF device tracking synchronized with Filament scene camera.
+ * 3. Horizontal and vertical surface detection with visual plane grid renderer.
+ * 4. Screen tap to ARCore frame hit test against physical detected planes.
+ * 5. Creation of authentic ARCore Anchor and binding 3D model to AnchorNode.
+ * 6. Model remains completely pinned in physical world space during user movement.
  */
 @Composable
 fun SingleARScene(
@@ -140,11 +157,39 @@ fun SingleARScene(
     materialLoader: MaterialLoader,
     modifier: Modifier = Modifier
 ) {
-    var arCoreAvailable by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+
+    // Camera permission check and request
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCameraPermission = granted
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasCameraPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // ARCore Tracking & Plane State
+    var isTracking by remember { mutableStateOf(false) }
+    var trackingFailureReason by remember { mutableStateOf<TrackingFailureReason?>(null) }
     var detectedPlanesCount by remember { mutableIntStateOf(0) }
     var activeAnchor by remember { mutableStateOf<Anchor?>(null) }
-    var latestFrame by remember { mutableStateOf<Frame?>(null) }
+    var pendingTapOffset by remember { mutableStateOf<Offset?>(null) }
 
+    // Touch gesture tracking: ensure ACTION_DOWN returns true so ACTION_UP is received
+    var downTime by remember { mutableLongStateOf(0L) }
+    var downX by remember { mutableFloatStateOf(0f) }
+    var downY by remember { mutableFloatStateOf(0f) }
+
+    // Load custom model instance if a custom file is provided
     val customInstance = remember(model?.customFilePath, modelLoader) {
         val path = model?.customFilePath
         if (path != null) {
@@ -153,214 +198,198 @@ fun SingleARScene(
                 try {
                     modelLoader.createModelInstance(file)
                 } catch (e: Exception) {
+                    Log.e("SingleARScene", "Failed to load custom model", e)
                     null
                 }
             } else null
         } else null
     }
 
-    if (!arCoreAvailable) {
-        // Fallback for devices without ARCore installed
-        Box(modifier = modifier.fillMaxSize()) {
-            CameraFeedView(
-                isMRMode = false,
-                modifier = Modifier.fillMaxSize()
-            )
-            FallbackARScene(
-                model = model,
-                customInstance = customInstance,
-                placedAnchors = placedAnchors,
-                onAddAnchor = onAddAnchor,
-                engine = engine,
-                modelLoader = modelLoader,
-                materialLoader = materialLoader,
-                modifier = Modifier.fillMaxSize()
-            )
-            SpatialReticle(
-                isMR = false,
-                modifier = Modifier.align(Alignment.Center)
-            )
+    // Clean up ARCore anchor when model is cleared or composable is disposed
+    LaunchedEffect(model) {
+        if (model == null) {
+            activeAnchor?.detach()
+            activeAnchor = null
         }
-    } else {
-        Box(modifier = modifier.fillMaxSize()) {
-            ARSceneView(
-                modifier = Modifier.fillMaxSize(),
-                engine = engine,
-                modelLoader = modelLoader,
-                materialLoader = materialLoader,
-                planeRenderer = true,
-                planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
-                sessionCameraConfig = { highestResolutionCameraConfig(it) },
-                onSessionFailed = {
-                    arCoreAvailable = false
-                },
-                onSessionUpdated = { _, frame ->
-                    latestFrame = frame
-                    val planes = frame.getUpdatedTrackables(Plane::class.java)
-                    val horizontalPlanes = planes.filter {
-                        it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
-                        it.trackingState == TrackingState.TRACKING
-                    }
-                    detectedPlanesCount = horizontalPlanes.size
-                    // Auto-anchor to the center of the first tracked floor plane if not yet placed
-                    if (activeAnchor == null && model != null && horizontalPlanes.isNotEmpty()) {
-                        val floor = horizontalPlanes.first()
-                        try {
-                            activeAnchor = floor.createAnchor(floor.centerPose)
-                        } catch (e: Exception) {}
-                    }
-                },
-                onTouchEvent = { motionEvent, _ ->
-                    if (motionEvent.action == MotionEvent.ACTION_UP && model != null) {
-                        val frame = latestFrame
-                        if (frame != null) {
-                            val hits = frame.hitTest(motionEvent.x, motionEvent.y)
-                            val groundHit = hits.firstOrNull { hit ->
-                                val trackable = hit.trackable
-                                trackable is Plane &&
-                                trackable.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
-                                trackable.isPoseInPolygon(hit.hitPose)
-                            }
-                            if (groundHit != null) {
-                                activeAnchor?.detach()
-                                activeAnchor = groundHit.createAnchor()
-                                true
-                            } else false
-                        } else false
-                    } else false
-                }
-            ) {
-                val currentAnchor = activeAnchor
-                if (currentAnchor != null && model != null) {
-                    AnchorNode(anchor = currentAnchor) {
-                        if (customInstance != null) {
-                            ModelNode(
-                                modelInstance = customInstance,
-                                scaleToUnits = 0.8f,
-                                isEditable = true
-                            )
-                        } else {
-                            RenderModelItem(
-                                model = model,
-                                customInstance = null,
-                                materialLoader = materialLoader,
-                                offsetPosition = Float3(0f, 0f, 0f)
-                            )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activeAnchor?.detach()
+            activeAnchor = null
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        ARSceneView(
+            modifier = Modifier.fillMaxSize(),
+            engine = engine,
+            modelLoader = modelLoader,
+            materialLoader = materialLoader,
+            planeRenderer = true,
+            planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
+            sessionConfiguration = { session, config ->
+                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                config.focusMode = Config.FocusMode.AUTO
+            },
+            onSessionCreated = { session ->
+                Log.d("SingleARScene", "ARCore Session created successfully")
+            },
+            onSessionResumed = { session ->
+                Log.d("SingleARScene", "ARCore Session resumed")
+            },
+            onSessionFailed = { exception ->
+                Log.e("SingleARScene", "ARCore Session exception: ${exception.message}", exception)
+            },
+            onTrackingFailureChanged = { reason ->
+                trackingFailureReason = reason
+            },
+            onSessionUpdated = { session, frame ->
+                val camera = frame.camera
+                isTracking = (camera.trackingState == TrackingState.TRACKING)
+
+                // Track active planes in the environment
+                val allPlanes = session.getAllTrackables(Plane::class.java)
+                val trackedPlanes = allPlanes.filter { it.trackingState == TrackingState.TRACKING }
+                detectedPlanesCount = trackedPlanes.size
+
+                // Process pending tap: perform ARCore hit test against active tracked planes
+                val tap = pendingTapOffset
+                if (tap != null) {
+                    pendingTapOffset = null
+                    if (isTracking && model != null) {
+                        val hitResults = frame.hitTest(tap.x, tap.y)
+                        // Prioritize hits inside the polygon boundary of horizontal upward planes (floors/tables)
+                        val planeHit = hitResults.firstOrNull { hit ->
+                            val trackable = hit.trackable
+                            trackable is Plane &&
+                            trackable.trackingState == TrackingState.TRACKING &&
+                            trackable.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                            trackable.isPoseInPolygon(hit.hitPose)
+                        } ?: hitResults.firstOrNull { hit ->
+                            val trackable = hit.trackable
+                            trackable is Plane &&
+                            trackable.trackingState == TrackingState.TRACKING &&
+                            trackable.isPoseInPolygon(hit.hitPose)
+                        } ?: hitResults.firstOrNull { hit ->
+                            val trackable = hit.trackable
+                            trackable is Plane && trackable.trackingState == TrackingState.TRACKING
+                        }
+
+                        if (planeHit != null) {
+                            // Create genuine ARCore Anchor from the physical hit result
+                            activeAnchor?.detach()
+                            val newAnchor = planeHit.createAnchor()
+                            activeAnchor = newAnchor
+                            Log.d("SingleARScene", "ARCore Anchor established at pose: ${planeHit.hitPose}")
                         }
                     }
                 }
-            }
-
-            // Surface Detection Status Overlay
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 80.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF16171B).copy(alpha = 0.85f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (detectedPlanesCount > 0) Color(0xFF00E676).copy(alpha = 0.8f)
-                    else Color(0xFF00E5FF).copy(alpha = 0.5f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (detectedPlanesCount > 0) Color(0xFF00E676)
-                                else Color(0xFFFFD600)
-                            )
-                    )
-                    Text(
-                        text = if (detectedPlanesCount > 0) {
-                            if (activeAnchor != null) "✓ Floor Detected • Tap floor to relocate"
-                            else "✓ Floor Detected • Tap floor to place"
-                        } else {
-                            "Scanning floor... Move phone slowly"
-                        },
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+            },
+            onTouchEvent = { motionEvent, _ ->
+                when (motionEvent.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downTime = System.currentTimeMillis()
+                        downX = motionEvent.x
+                        downY = motionEvent.y
+                        true // Consume ACTION_DOWN to ensure ACTION_UP is dispatched
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val elapsed = System.currentTimeMillis() - downTime
+                        val dx = motionEvent.x - downX
+                        val dy = motionEvent.y - downY
+                        val distanceSq = dx * dx + dy * dy
+                        // Verify this was a tap (under 500ms and minimal movement)
+                        if (elapsed < 500 && distanceSq < 10000f) {
+                            pendingTapOffset = Offset(motionEvent.x, motionEvent.y)
+                        }
+                        true
+                    }
+                    else -> false
                 }
             }
-
-            // Center Reticle
-            SpatialReticle(
-                isMR = false,
-                modifier = Modifier.align(Alignment.Center)
-            )
-        }
-    }
-}
-
-/**
- * Fallback AR scene for devices without Google ARCore.
- */
-@Composable
-fun FallbackARScene(
-    model: SpatialModel?,
-    customInstance: FilamentInstance?,
-    placedAnchors: List<PlacedAnchor>,
-    onAddAnchor: (PlacedAnchor) -> Unit,
-    engine: Engine,
-    modelLoader: ModelLoader,
-    materialLoader: MaterialLoader,
-    modifier: Modifier = Modifier
-) {
-    val cameraManipulator = rememberCameraManipulator()
-
-    SceneView(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(model) {
-                detectTapGestures { offset ->
-                    if (model != null) {
-                        val newAnchor = PlacedAnchor(
-                            position = Float3(
-                                (offset.x / size.width - 0.5f) * 0.8f,
-                                -(offset.y / size.height - 0.5f) * 0.8f,
-                                -0.6f
-                            ),
-                            model = model
+        ) {
+            // Anchor 3D model to the physical world pose
+            val currentAnchor = activeAnchor
+            if (currentAnchor != null && model != null) {
+                AnchorNode(anchor = currentAnchor) {
+                    if (customInstance != null) {
+                        ModelNode(
+                            modelInstance = customInstance,
+                            scaleToUnits = 0.8f,
+                            isEditable = true
                         )
-                        onAddAnchor(newAnchor)
+                    } else {
+                        RenderModelItem(
+                            model = model,
+                            customInstance = null,
+                            materialLoader = materialLoader,
+                            offsetPosition = Float3(0f, 0f, 0f)
+                        )
                     }
                 }
-            },
-        surfaceType = SurfaceType.Surface,
-        isOpaque = false,
-        engine = engine,
-        modelLoader = modelLoader,
-        materialLoader = materialLoader,
-        cameraManipulator = cameraManipulator
-    ) {
-        if (model != null) {
-            if (placedAnchors.isEmpty()) {
-                RenderModelItem(
-                    model = model,
-                    customInstance = customInstance,
-                    materialLoader = materialLoader,
-                    offsetPosition = Float3(0f, 0f, 0f)
-                )
-            } else {
-                placedAnchors.forEach { anchor ->
-                    RenderModelItem(
-                        model = anchor.model,
-                        customInstance = customInstance,
-                        materialLoader = materialLoader,
-                        offsetPosition = anchor.position
-                    )
-                }
             }
         }
+
+        // Live AR Pipeline Status HUD
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 80.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFF16171B).copy(alpha = 0.88f),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (activeAnchor != null) Color(0xFF00E676).copy(alpha = 0.9f)
+                else if (detectedPlanesCount > 0) Color(0xFF00E5FF).copy(alpha = 0.8f)
+                else Color(0xFFFFD600).copy(alpha = 0.6f)
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (activeAnchor != null) Color(0xFF00E676)
+                            else if (detectedPlanesCount > 0) Color(0xFF00E5FF)
+                            else Color(0xFFFFD600)
+                        )
+                )
+                Text(
+                    text = when {
+                        !isTracking && trackingFailureReason == TrackingFailureReason.INSUFFICIENT_LIGHT ->
+                            "Too dark • Move to a brighter area"
+                        !isTracking && trackingFailureReason == TrackingFailureReason.EXCESSIVE_MOTION ->
+                            "Moving too fast • Slow down"
+                        !isTracking && trackingFailureReason == TrackingFailureReason.INSUFFICIENT_FEATURES ->
+                            "Aim camera at a textured surface"
+                        !isTracking ->
+                            "Initializing AR tracking..."
+                        activeAnchor != null ->
+                            "✓ Model Anchored • Tap surface to relocate"
+                        detectedPlanesCount > 0 ->
+                            "✓ Surface Detected ($detectedPlanesCount) • Tap floor to place"
+                        else ->
+                            "Scanning surfaces... Move phone slowly"
+                    },
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Spatial Center Reticle
+        SpatialReticle(
+            isMR = false,
+            modifier = Modifier.align(Alignment.Center)
+        )
     }
 }
 

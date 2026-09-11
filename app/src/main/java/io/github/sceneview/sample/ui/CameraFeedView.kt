@@ -156,8 +156,8 @@ fun CameraSurfacePreview(
                 StereoscopicCameraGLView(
                     context = ctx,
                     initialIsMR = isMR,
-                    onSurfaceReady = { surface ->
-                        controller.start(surface)
+                    onSurfaceReady = { surface, surfaceTexture ->
+                        controller.start(surface, surfaceTexture)
                     }
                 ).also { glViewRef = it }
             },
@@ -215,7 +215,7 @@ fun CameraSurfacePreview(
 class StereoscopicCameraGLView(
     context: Context,
     initialIsMR: Boolean,
-    onSurfaceReady: (Surface) -> Unit
+    onSurfaceReady: (Surface, SurfaceTexture) -> Unit
 ) : GLSurfaceView(context) {
 
     private val renderer = StereoscopicCameraRenderer(this, initialIsMR, onSurfaceReady)
@@ -241,7 +241,7 @@ class StereoscopicCameraGLView(
 class StereoscopicCameraRenderer(
     private val glSurfaceView: GLSurfaceView,
     @Volatile var isMR: Boolean,
-    private val onSurfaceReady: (Surface) -> Unit
+    private val onSurfaceReady: (Surface, SurfaceTexture) -> Unit
 ) : GLSurfaceView.Renderer {
 
     private var textureId: Int = 0
@@ -285,15 +285,16 @@ class StereoscopicCameraRenderer(
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
 
-        // 2. Create SurfaceTexture and notify camera controller
+        // 2. Create SurfaceTexture with explicit high-resolution buffer size
         val st = SurfaceTexture(textureId)
+        st.setDefaultBufferSize(1920, 1080)
         st.setOnFrameAvailableListener {
             glSurfaceView.requestRender()
         }
         surfaceTexture = st
         val surf = Surface(st)
         cameraSurface = surf
-        onSurfaceReady(surf)
+        onSurfaceReady(surf, st)
 
         // 3. Compile and build GL program
         program = buildProgram(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -455,13 +456,15 @@ class CameraPreviewController(private val context: Context) {
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var currentSurface: Surface? = null
+    private var currentSurfaceTexture: SurfaceTexture? = null
     @Volatile
     private var isStopped = false
 
     @SuppressLint("MissingPermission")
-    fun start(surface: Surface) {
+    fun start(surface: Surface, surfaceTexture: SurfaceTexture? = null) {
         if (!surface.isValid) return
         currentSurface = surface
+        currentSurfaceTexture = surfaceTexture
         initCamera()
     }
 
@@ -485,6 +488,17 @@ class CameraPreviewController(private val context: Context) {
                 val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
                 facing == CameraCharacteristics.LENS_FACING_BACK
             } ?: cameraIdList.first()
+
+            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val outputSizes = map?.getOutputSizes(SurfaceTexture::class.java)
+            val optimalSize = outputSizes?.filter { it.width <= 1920 && it.height <= 1080 }
+                ?.maxByOrNull { it.width.toLong() * it.height.toLong() }
+                ?: outputSizes?.maxByOrNull { it.width.toLong() * it.height.toLong() }
+
+            optimalSize?.let { opt ->
+                currentSurfaceTexture?.setDefaultBufferSize(opt.width, opt.height)
+            }
 
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
@@ -525,8 +539,28 @@ class CameraPreviewController(private val context: Context) {
             val previewRequestBuilder = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
             previewRequestBuilder.addTarget(surface)
             previewRequestBuilder.set(
+                CaptureRequest.CONTROL_MODE,
+                CaptureRequest.CONTROL_MODE_AUTO
+            )
+            previewRequestBuilder.set(
                 CaptureRequest.CONTROL_AF_MODE,
                 CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
+            previewRequestBuilder.set(
+                CaptureRequest.CONTROL_AE_MODE,
+                CaptureRequest.CONTROL_AE_MODE_ON
+            )
+            previewRequestBuilder.set(
+                CaptureRequest.CONTROL_AWB_MODE,
+                CaptureRequest.CONTROL_AWB_MODE_AUTO
+            )
+            previewRequestBuilder.set(
+                CaptureRequest.NOISE_REDUCTION_MODE,
+                CaptureRequest.NOISE_REDUCTION_MODE_HIGH_QUALITY
+            )
+            previewRequestBuilder.set(
+                CaptureRequest.EDGE_MODE,
+                CaptureRequest.EDGE_MODE_HIGH_QUALITY
             )
 
             camera.createCaptureSession(

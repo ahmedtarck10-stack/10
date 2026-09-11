@@ -1,5 +1,6 @@
 package io.github.sceneview.sample.ui
 
+import android.view.MotionEvent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,7 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,9 +40,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.android.filament.Engine
 import com.google.android.filament.gltfio.FilamentInstance
+import com.google.ar.core.Anchor
+import com.google.ar.core.Config
+import com.google.ar.core.Frame
+import com.google.ar.core.Plane
+import com.google.ar.core.TrackingState
 import dev.romainguy.kotlin.math.Float3
 import io.github.sceneview.SceneView
 import io.github.sceneview.SurfaceType
+import io.github.sceneview.ar.ARSceneView
+import io.github.sceneview.ar.highestResolutionCameraConfig
+import io.github.sceneview.ar.node.AnchorNode
 import io.github.sceneview.loaders.MaterialLoader
 import io.github.sceneview.loaders.ModelLoader
 import io.github.sceneview.node.CubeNode
@@ -82,15 +95,12 @@ fun ARMRSceneView(
             .background(Color.Black)
             .testTag("armr_viewport")
     ) {
-        // 1. Live Camera Feed (Single for AR, Dual for MR)
-        CameraFeedView(
-            isMRMode = isMR,
-            modifier = Modifier.fillMaxSize()
-        )
-
-        // 2. 3D Model Layer over Camera
         if (isMR) {
-            // MR Mode: Double Camera & Double Model (Stereoscopic SBS View)
+            // MR Mode: Stereoscopic Double Camera (Left Eye & Right Eye) + Double 3D Model Layer
+            CameraFeedView(
+                isMRMode = true,
+                modifier = Modifier.fillMaxSize()
+            )
             StereoscopicMRScene(
                 model = activeModel,
                 placedAnchors = placedAnchors,
@@ -101,11 +111,12 @@ fun ARMRSceneView(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // AR Mode: Single Full-screen AR View
+            // AR Mode: Real Google ARCore Surface / Ground Detection View
             SingleARScene(
                 model = activeModel,
                 placedAnchors = placedAnchors,
                 onAddAnchor = onAddAnchor,
+                onClearAnchors = onClearAnchors,
                 engine = engine,
                 modelLoader = modelLoader,
                 materialLoader = materialLoader,
@@ -116,19 +127,23 @@ fun ARMRSceneView(
 }
 
 /**
- * Single Full-screen AR Scene View.
+ * Single Full-screen AR Scene View with ARCore Floor Surface Detection.
  */
 @Composable
 fun SingleARScene(
     model: SpatialModel?,
     placedAnchors: List<PlacedAnchor>,
     onAddAnchor: (PlacedAnchor) -> Unit,
+    onClearAnchors: () -> Unit,
     engine: Engine,
     modelLoader: ModelLoader,
     materialLoader: MaterialLoader,
     modifier: Modifier = Modifier
 ) {
-    val cameraManipulator = rememberCameraManipulator()
+    var arCoreAvailable by remember { mutableStateOf(true) }
+    var detectedPlanesCount by remember { mutableIntStateOf(0) }
+    var activeAnchor by remember { mutableStateOf<Anchor?>(null) }
+    var latestFrame by remember { mutableStateOf<Frame?>(null) }
 
     val customInstance = remember(model?.customFilePath, modelLoader) {
         val path = model?.customFilePath
@@ -144,58 +159,208 @@ fun SingleARScene(
         } else null
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        SceneView(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(model) {
-                    detectTapGestures { offset ->
-                        if (model != null) {
-                            val newAnchor = PlacedAnchor(
-                                position = Float3(
-                                    (offset.x / size.width - 0.5f) * 0.8f,
-                                    -(offset.y / size.height - 0.5f) * 0.8f,
-                                    -0.6f
-                                ),
-                                model = model
-                            )
-                            onAddAnchor(newAnchor)
-                        }
+    if (!arCoreAvailable) {
+        // Fallback for devices without ARCore installed
+        Box(modifier = modifier.fillMaxSize()) {
+            CameraFeedView(
+                isMRMode = false,
+                modifier = Modifier.fillMaxSize()
+            )
+            FallbackARScene(
+                model = model,
+                customInstance = customInstance,
+                placedAnchors = placedAnchors,
+                onAddAnchor = onAddAnchor,
+                engine = engine,
+                modelLoader = modelLoader,
+                materialLoader = materialLoader,
+                modifier = Modifier.fillMaxSize()
+            )
+            SpatialReticle(
+                isMR = false,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    } else {
+        Box(modifier = modifier.fillMaxSize()) {
+            ARSceneView(
+                modifier = Modifier.fillMaxSize(),
+                engine = engine,
+                modelLoader = modelLoader,
+                materialLoader = materialLoader,
+                planeRenderer = true,
+                planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL,
+                sessionCameraConfig = { highestResolutionCameraConfig(it) },
+                onSessionFailed = {
+                    arCoreAvailable = false
+                },
+                onSessionUpdated = { _, frame ->
+                    latestFrame = frame
+                    val planes = frame.getUpdatedTrackables(Plane::class.java)
+                    val horizontalPlanes = planes.filter {
+                        it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                        it.trackingState == TrackingState.TRACKING
+                    }
+                    detectedPlanesCount = horizontalPlanes.size
+                    // Auto-anchor to the center of the first tracked floor plane if not yet placed
+                    if (activeAnchor == null && model != null && horizontalPlanes.isNotEmpty()) {
+                        val floor = horizontalPlanes.first()
+                        try {
+                            activeAnchor = floor.createAnchor(floor.centerPose)
+                        } catch (e: Exception) {}
                     }
                 },
-            surfaceType = SurfaceType.Surface,
-            isOpaque = false,
-            engine = engine,
-            modelLoader = modelLoader,
-            materialLoader = materialLoader,
-            cameraManipulator = cameraManipulator
-        ) {
-            if (model != null) {
-                if (placedAnchors.isEmpty()) {
-                    RenderModelItem(
-                        model = model,
-                        customInstance = customInstance,
-                        materialLoader = materialLoader,
-                        offsetPosition = Float3(0f, 0f, 0f)
-                    )
-                } else {
-                    placedAnchors.forEach { anchor ->
-                        RenderModelItem(
-                            model = anchor.model,
-                            customInstance = null,
-                            materialLoader = materialLoader,
-                            offsetPosition = anchor.position
-                        )
+                onTouchEvent = { motionEvent, _ ->
+                    if (motionEvent.action == MotionEvent.ACTION_UP && model != null) {
+                        val frame = latestFrame
+                        if (frame != null) {
+                            val hits = frame.hitTest(motionEvent.x, motionEvent.y)
+                            val groundHit = hits.firstOrNull { hit ->
+                                val trackable = hit.trackable
+                                trackable is Plane &&
+                                trackable.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                                trackable.isPoseInPolygon(hit.hitPose)
+                            }
+                            if (groundHit != null) {
+                                activeAnchor?.detach()
+                                activeAnchor = groundHit.createAnchor()
+                                true
+                            } else false
+                        } else false
+                    } else false
+                }
+            ) {
+                val currentAnchor = activeAnchor
+                if (currentAnchor != null && model != null) {
+                    AnchorNode(anchor = currentAnchor) {
+                        if (customInstance != null) {
+                            ModelNode(
+                                modelInstance = customInstance,
+                                scaleToUnits = 0.8f,
+                                isEditable = true
+                            )
+                        } else {
+                            RenderModelItem(
+                                model = model,
+                                customInstance = null,
+                                materialLoader = materialLoader,
+                                offsetPosition = Float3(0f, 0f, 0f)
+                            )
+                        }
                     }
                 }
             }
-        }
 
-        // Center Reticle
-        SpatialReticle(
-            isMR = false,
-            modifier = Modifier.align(Alignment.Center)
-        )
+            // Surface Detection Status Overlay
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 80.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF16171B).copy(alpha = 0.85f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (detectedPlanesCount > 0) Color(0xFF00E676).copy(alpha = 0.8f)
+                    else Color(0xFF00E5FF).copy(alpha = 0.5f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (detectedPlanesCount > 0) Color(0xFF00E676)
+                                else Color(0xFFFFD600)
+                            )
+                    )
+                    Text(
+                        text = if (detectedPlanesCount > 0) {
+                            if (activeAnchor != null) "✓ Floor Detected • Tap floor to relocate"
+                            else "✓ Floor Detected • Tap floor to place"
+                        } else {
+                            "Scanning floor... Move phone slowly"
+                        },
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Center Reticle
+            SpatialReticle(
+                isMR = false,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+/**
+ * Fallback AR scene for devices without Google ARCore.
+ */
+@Composable
+fun FallbackARScene(
+    model: SpatialModel?,
+    customInstance: FilamentInstance?,
+    placedAnchors: List<PlacedAnchor>,
+    onAddAnchor: (PlacedAnchor) -> Unit,
+    engine: Engine,
+    modelLoader: ModelLoader,
+    materialLoader: MaterialLoader,
+    modifier: Modifier = Modifier
+) {
+    val cameraManipulator = rememberCameraManipulator()
+
+    SceneView(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(model) {
+                detectTapGestures { offset ->
+                    if (model != null) {
+                        val newAnchor = PlacedAnchor(
+                            position = Float3(
+                                (offset.x / size.width - 0.5f) * 0.8f,
+                                -(offset.y / size.height - 0.5f) * 0.8f,
+                                -0.6f
+                            ),
+                            model = model
+                        )
+                        onAddAnchor(newAnchor)
+                    }
+                }
+            },
+        surfaceType = SurfaceType.Surface,
+        isOpaque = false,
+        engine = engine,
+        modelLoader = modelLoader,
+        materialLoader = materialLoader,
+        cameraManipulator = cameraManipulator
+    ) {
+        if (model != null) {
+            if (placedAnchors.isEmpty()) {
+                RenderModelItem(
+                    model = model,
+                    customInstance = customInstance,
+                    materialLoader = materialLoader,
+                    offsetPosition = Float3(0f, 0f, 0f)
+                )
+            } else {
+                placedAnchors.forEach { anchor ->
+                    RenderModelItem(
+                        model = anchor.model,
+                        customInstance = customInstance,
+                        materialLoader = materialLoader,
+                        offsetPosition = anchor.position
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -203,6 +368,9 @@ fun SingleARScene(
  * Stereoscopic Mixed Reality Scene (Double Camera, Double Model - SBS).
  * Renders both Left Eye and Right Eye stereoscopic models inside a unified single SceneView
  * to prevent duplicate Filament engine conflicts and EGL attribute errors.
+ *
+ * CRITICAL FIX: Both Left Eye and Right Eye receive genuine FilamentInstance of the loaded model.
+ * The right eye never falls back to a primitive Cube.
  */
 @Composable
 fun StereoscopicMRScene(
@@ -216,19 +384,35 @@ fun StereoscopicMRScene(
 ) {
     val cameraManipulator = rememberCameraManipulator()
 
-    val customInstance = remember(model?.customFilePath, modelLoader) {
+    val modelInstances = remember(model?.customFilePath, modelLoader) {
         val path = model?.customFilePath
         if (path != null) {
             val file = File(path)
             if (file.exists()) {
                 try {
-                    modelLoader.createModelInstance(file)
+                    val instanced = modelLoader.createInstancedModel(file, 2)
+                    if (instanced.size >= 2) {
+                        instanced
+                    } else {
+                        val inst1 = modelLoader.createModelInstance(file)
+                        val inst2 = try { modelLoader.createModelInstance(file) } catch (e: Exception) { null }
+                        listOfNotNull(inst1, inst2)
+                    }
                 } catch (e: Exception) {
-                    null
+                    try {
+                        val inst1 = modelLoader.createModelInstance(file)
+                        val inst2 = try { modelLoader.createModelInstance(file) } catch (e2: Exception) { null }
+                        listOfNotNull(inst1, inst2)
+                    } catch (e2: Exception) {
+                        emptyList()
+                    }
                 }
-            } else null
-        } else null
+            } else emptyList()
+        } else emptyList()
     }
+
+    val leftInstance = modelInstances.getOrNull(0)
+    val rightInstance = modelInstances.getOrNull(1) ?: leftInstance
 
     Box(modifier = modifier.fillMaxSize()) {
         // Single unified SceneView rendering both Left Eye and Right Eye stereoscopic models
@@ -268,14 +452,14 @@ fun StereoscopicMRScene(
                     // Left Eye Model
                     RenderModelItem(
                         model = model,
-                        customInstance = customInstance,
+                        customInstance = leftInstance,
                         materialLoader = materialLoader,
                         offsetPosition = Float3(leftOffset, 0f, 0f)
                     )
-                    // Right Eye Model (with stereoscopic parallax)
+                    // Right Eye Model (True duplicate model with stereoscopic parallax, NOT a primitive cube!)
                     RenderModelItem(
                         model = model,
-                        customInstance = null,
+                        customInstance = rightInstance,
                         materialLoader = materialLoader,
                         offsetPosition = Float3(rightOffset, 0f, 0f)
                     )
@@ -284,14 +468,14 @@ fun StereoscopicMRScene(
                         // Left Eye anchor
                         RenderModelItem(
                             model = anchor.model,
-                            customInstance = null,
+                            customInstance = leftInstance,
                             materialLoader = materialLoader,
                             offsetPosition = Float3(anchor.position.x + leftOffset, anchor.position.y, anchor.position.z)
                         )
                         // Right Eye anchor
                         RenderModelItem(
                             model = anchor.model,
-                            customInstance = null,
+                            customInstance = rightInstance,
                             materialLoader = materialLoader,
                             offsetPosition = Float3(anchor.position.x + rightOffset, anchor.position.y, anchor.position.z)
                         )

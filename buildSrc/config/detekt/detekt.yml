@@ -1,0 +1,82 @@
+# Detekt configuration for SceneView
+# Builds upon the default config — only overrides are listed here.
+#
+# This file targets detekt 2.x property names. Several property names changed
+# from 1.23.x (e.g. functionThreshold -> allowedFunctionParameters,
+# threshold -> allowedComplexity / allowedLines, UnusedPrivateMember split into
+# UnusedPrivateClass / UnusedPrivateFunction / UnusedPrivateProperty).
+# See #1740.
+
+complexity:
+  LongParameterList:
+    # Compose functions and Filament builders legitimately have many parameters
+    allowedFunctionParameters: 12
+    allowedConstructorParameters: 12
+    ignoreAnnotated:
+      - 'Composable'
+  TooManyFunctions:
+    # Node types and scope objects expose many public functions by design
+    allowedFunctionsPerFile: 25
+    allowedFunctionsPerClass: 25
+    allowedFunctionsPerInterface: 25
+    allowedFunctionsPerObject: 25
+    allowedFunctionsPerEnum: 25
+  LargeClass:
+    allowedLines: 800
+  CyclomaticComplexMethod:
+    allowedComplexity: 25
+    # AR scene composables handle many states (tracking, failure, UI) in one function by design.
+    ignoreAnnotated:
+      - 'Composable'
+  LongMethod:
+    # Compose scene-root composables (SceneView, ARSceneView) legitimately
+    # exceed the 60-line Java-style default — they expose dozens of named
+    # parameters with KDoc and orchestrate the scene lifecycle in a single
+    # builder-pattern function. Exempt @Composable functions so SDK
+    # consumers writing their own scene roots aren't blocked by detekt either.
+    ignoreAnnotated:
+      - 'Composable'
+
+style:
+  MagicNumber:
+    # 3D code is full of legitimate numeric constants (coordinates, angles, etc.)
+    active: false
+  # UnusedPrivateMember was split in detekt 2.x; we keep all three sub-rules
+  # active with the same _.*|serialVersionUID exemption that the 1.x config had.
+  UnusedPrivateFunction:
+    active: true
+    allowedNames: '_.*'
+  UnusedPrivateProperty:
+    active: true
+    allowedNames: '_.*|serialVersionUID|ignored|expected'
+  MaxLineLength:
+    maxLineLength: 120
+    excludeCommentStatements: true
+  WildcardImport:
+    active: false
+  ReturnCount:
+    max: 5
+  ForbiddenComment:
+    active: false
+
+naming:
+  FunctionNaming:
+    # Compose functions are PascalCase by convention
+    ignoreAnnotated:
+      - 'Composable'
+  TopLevelPropertyNaming:
+    constantPattern: '[A-Z][A-Za-z0-9_]*'
+
+potential-bugs:
+  HasPlatformType:
+    active: true
+
+performance:
+  SpreadOperator:
+    # Acceptable in build/config code, not hot paths
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    # Filament JNI can throw generic exceptions that need catching
+    active: false

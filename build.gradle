@@ -1,0 +1,216 @@
+plugins {
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.android.application) apply false
+    // AGP 9's KMP Android-library plugin, used by :sceneview-compose. Declared
+    // here (not only in the module) so the plugin marker is resolved once with an
+    // explicit version — otherwise Gradle sees it "already on the classpath with
+    // an unknown version" via the AGP jar the two plugins above already pulled in.
+    alias(libs.plugins.android.kotlin.multiplatform.library) apply false
+    // Kept under AGP 9 via `android.builtInKotlin=false` — see gradle.properties
+    // for why the Kotlin Gradle plugin still has to be the one applied.
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.compose.compiler) apply false
+    alias(libs.plugins.compose.multiplatform) apply false
+    alias(libs.plugins.dokka) apply false
+    alias(libs.plugins.publish) apply false
+    alias(libs.plugins.detekt) apply false
+    // Public-API surface tracking (#2723). Applied (NOT `apply false`): the
+    // binary-compatibility-validator is a root-project plugin that registers
+    // the `apiDump` / `apiCheck` tasks and configures every non-ignored
+    // subproject from here.
+    // alias(libs.plugins.binary.compatibility.validator)
+}
+
+// ── Public-API surface tracking (binary-compatibility-validator, #2723) ──────
+// apiValidation {
+//     ignoredProjects += [
+//         "common",
+//         "android-demo",
+//         "android-tv-demo",
+//         "desktop-demo",
+//         "sceneview-web",
+//         "snippets-check",
+//     ]
+// }
+
+// Force patched versions of transitive npm dependencies (Dependabot security alerts)
+plugins.withType(org.jetbrains.kotlin.gradle.targets.js.yarn.YarnPlugin) {
+    extensions.getByType(org.jetbrains.kotlin.gradle.targets.js.yarn.YarnRootExtension).tap {
+        resolution("serialize-javascript", ">=7.0.3")
+        // webpack 5.107.0 moved `lib/ModuleNotFoundError.js` →
+        // `lib/errors/ModuleNotFoundError.js`. `kotlin-web-helpers` (bundled
+        // with the Kotlin/JS Gradle plugin) still does:
+        //   require("webpack/lib/ModuleNotFoundError")
+        // in `dist/tc-log-error-webpack.js`, so every webpack-driven task
+        // crashes with `Cannot find module 'webpack/lib/ModuleNotFoundError'`
+        // — and karma surfaces it as a confusing top-of-stack `karma/bin/karma`
+        // line (see #1785). Covers:
+        //   • :sceneview-web:jsBrowserProductionWebpack (sceneview-web npm
+        //     publish — original repro that motivated #1791)
+        //   • :sceneview-web:jsBrowserDistribution
+        //   • :sceneview-web:jsTest (karma → webpack preprocessor)
+        // Cap at <5.107.0 until kotlin-web-helpers ships a fix.
+        resolution("webpack", ">=5.104.1 <5.107.0")
+        resolution("webpack-dev-server", ">=5.2.1")
+        resolution("path-to-regexp", ">=0.2.2")
+        resolution("brace-expansion", ">=1.1.13")
+    }
+}
+
+subprojects {
+    plugins.withId("com.vanniktech.maven.publish") {
+        mavenPublishing {
+            publishToMavenCentral()
+            signAllPublications()
+        }
+    }
+
+    // Colon-free Kotlin module names (#3467).
+    //
+    // Kotlin Gradle plugin 2.4 names every JVM/Android compilation
+    // `<project.group>:<project.name>` (+ `_<compilation>` off `main`), and a
+    // subproject's default Gradle group is the root project's name — so each
+    // module here compiled as `SceneView:<module>`. The compiler writes the
+    // `.kotlin_module` file under a sanitised name (`SceneView_sceneview_release`),
+    // which is why debug APKs and the AARs never showed it; but the raw name is
+    // recorded in every class's Kotlin metadata, and R8 re-emits the resource
+    // under it on minified release builds. AGP 9's bundle packaging validates
+    // zip entry names, and `:samples:android-demo:buildReleasePreBundle` died
+    // on `root/META-INF/SceneView:sceneview_release.kotlin_module`, breaking
+    // every Play deploy from `main`. The app's `META-INF/*.kotlin_module`
+    // packaging exclude is no fallback: it is not applied on the bundle path
+    // at all (the AAB still carries every library's `.kotlin_module`).
+    //
+    // Pin the pre-2.4 convention instead: `<project.name>` for `main`,
+    // `<project.name>_<compilation>` otherwise (`sceneview_release`,
+    // `sceneview-core`, `android-demo_release`). Applied through the
+    // compilation API so it reaches `kotlin-android` modules and every
+    // multiplatform JVM-flavoured target alike — `androidTarget()`, AGP 9's
+    // `androidLibrary { }` and `jvm()`. Native and JS compilations do not have
+    // JVM compiler options and are left as they are. Check with
+    // `./gradlew :samples:android-demo:bundleRelease` (the task the deploys run).
+    def colonFreeModuleName = { compilation ->
+        def options = compilation.compilerOptions.options
+        if (options instanceof org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompilerOptions) {
+            options.moduleName = compilation.name == "main"
+                ? project.name
+                : "${project.name}_${compilation.name}".toString()
+        }
+    }
+    plugins.withId("org.jetbrains.kotlin.android") {
+        kotlin.target.compilations.configureEach(colonFreeModuleName)
+    }
+    plugins.withId("org.jetbrains.kotlin.multiplatform") {
+        kotlin.targets.configureEach { target ->
+            target.compilations.configureEach(colonFreeModuleName)
+        }
+    }
+
+    // ── Dokka: one Kotlin source set per Android module (#3604) ──────────────
+    //
+    // AGP 9 registers the new-DSL Kotlin source sets (`main`, `test`,
+    // `androidTest`, `testFixtures`) ON TOP of the per-variant ones Dokka has
+    // always adapted (`debug`, `release`, ...). Dokka 2.2 turns each of them
+    // into a Dokka source set, so `:sceneview` and `:arsceneview` ended up with
+    // TWO unsuppressed ones — `main` (shown as `androidJvm`) and `release` —
+    // both rooted at `src/main/java`. Its pre-generation check refuses that:
+    //
+    //   Pre-generation validity check failed: Source sets 'androidJvm' and
+    //   'release' have the common source roots: .../src/main/java, ...
+    //   Every Kotlin source file should belong to only one source set (module).
+    //
+    // which failed `dokkaGeneratePublicationHtml` — and with it both the
+    // "Publish to Maven Central" job (the javadoc jar) and "Publish API docs"
+    // at the 4.35.0 cut. 4.34.0 predates the AGP 9 move (#3459) and had only
+    // `release`.
+    //
+    // Keep `main`, suppress every other source set of that module. `main` is
+    // AGP 9's canonical one; the variant flavour additionally leaks a build
+    // type name into the published docs and roots the generated BuildConfig
+    // directory. Output is otherwise identical (same 1713 pages), only the
+    // source-set label changes from `release` to `androidJvm`. The `main`
+    // guard keeps this a no-op for KMP modules, whose source sets are named
+    // `commonMain` / `androidMain` and never collide this way.
+    plugins.withId("org.jetbrains.dokka") {
+        dokka {
+            dokkaSourceSets.configureEach { sourceSet ->
+                if (dokkaSourceSets.findByName("main") != null && sourceSet.name != "main") {
+                    sourceSet.suppress.set(true)
+                }
+            }
+        }
+    }
+
+    // Apply detekt to all subprojects that use Kotlin.
+    //
+    // NOTE: we use `pluginManager.apply("dev.detekt")` instead of the legacy
+    // `apply plugin: "dev.detekt"` form. The legacy form silently fails to
+    // register the plugin on Gradle 8.14.x in a subprojects {} block when the
+    // plugin is declared in the root `plugins {}` with `apply false` — the
+    // ScriptHandler can't find the dev.detekt META-INF descriptor through the
+    // subproject's classpath. `pluginManager.apply(id)` resolves through the
+    // root project's plugin classpath where the alias is declared, which works.
+    plugins.withId("org.jetbrains.kotlin.android") {
+        pluginManager.apply("dev.detekt")
+    }
+    plugins.withId("org.jetbrains.kotlin.multiplatform") {
+        pluginManager.apply("dev.detekt")
+    }
+    plugins.withId("dev.detekt") {
+        detekt {
+            buildUponDefaultConfig = true
+            config.setFrom(rootProject.files("buildSrc/config/detekt/detekt.yml"))
+            parallel = true
+            // Per-module baselines (generated by ./gradlew detektBaseline) live
+            // next to the shared detekt.yml config and are committed to
+            // grandfather pre-existing violations. New violations still fail.
+            // For KMP modules detekt 2.x writes per-source-set baselines
+            // (baseline-<module>-<sourceSet>SourceSet.xml) and the `baseline`
+            // property is ignored; only the Android/JVM modules use the single
+            // baseline-<module>.xml file.
+            baseline = rootProject.file("buildSrc/config/detekt/baseline-${project.name}.xml")
+        }
+
+        // For KMP modules the bare `detekt` task is NO-SOURCE because detekt
+        // 2.x scopes source-file analysis to the per-source-set tasks
+        // (detektCommonMainSourceSet, detektAndroidMainSourceSet, ...). Wire
+        // the plain `detekt` task to depend on every detekt*SourceSet task so
+        // that `./gradlew :<module>:detekt` actually analyzes all source sets,
+        // matching the Android/JVM module behavior.
+        plugins.withId("org.jetbrains.kotlin.multiplatform") {
+            tasks.named("detekt") {
+                dependsOn(tasks.matching { it.name.startsWith("detekt") && it.name.endsWith("SourceSet") && !it.name.contains("Baseline") })
+            }
+        }
+    }
+
+    // ── CI hang diagnostics + fail-fast for JVM unit tests (#2692) ────────────
+    // The `Unit tests` CI job intermittently hung >30 min with ZERO output and
+    // was force-cancelled at its job timeout, naming NO culprit test — the log
+    // went silent the moment `testDebugUnitTest` started, so every hang was
+    // unattributable. Two safeguards convert that silent 30-min kill into a
+    // named, thread-dumped failure:
+    //
+    //   1. `testLogging` emits a `started` event per test method, so the CI log
+    //      always names the test currently running. The NEXT hang points at the
+    //      exact test instead of going dark. (`passed` is deliberately omitted —
+    //      `started` already names the culprit and a line-per-pass is noise.)
+    //   2. A per-task `timeout` fires at 15 min — comfortably above the whole
+    //      suite's normal <20-min wall time yet well under the job's 30-min
+    //      ceiling — so a genuinely hung test task self-cancels with a Gradle
+    //      thread dump (stack trace of the stuck thread) instead of silently
+    //      eating the job. `--stacktrace` on the CI step then attributes it.
+    //
+    // Scoped to JVM `Test` tasks only: KMP `jsTest` / native test tasks are a
+    // different task type and are unaffected, and instrumented
+    // `connectedAndroidTest` tasks are `DeviceProviderInstrumentTestTask`, not
+    // `Test`, so they are never timeout-killed by this convention.
+    tasks.withType(Test).configureEach {
+        testLogging {
+            events "started", "skipped", "failed"
+            exceptionFormat = "full"
+        }
+        timeout.set(java.time.Duration.ofMinutes(15))
+    }
+}

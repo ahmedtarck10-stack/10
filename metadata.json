@@ -1,0 +1,6 @@
+{
+  "name": "MIXED REALITY",
+  "description": "Spatial 3D, AR, and Mixed Reality application powered by SceneView with Object, AR, and MR modes.",
+  "requestFramePermissions": ["CAMERA", "RECORD_AUDIO"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,84 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:DepthMeshCollision.kt:i0 &lt; 0 || i1 &lt; 0 || i2 &lt; 0 || i0 + 2 >= posSize || i1 + 2 >= posSize || i2 + 2 >= posSize</ID>
+    <ID>ComplexCondition:DepthMeshCollision.kt:triMaxX >= region.minX &amp;&amp; triMinX &lt;= region.maxX &amp;&amp; triMaxY >= region.minY &amp;&amp; triMinY &lt;= region.maxY &amp;&amp; triMaxZ >= region.minZ &amp;&amp; triMinZ &lt;= region.maxZ</ID>
+    <ID>ComplexCondition:DepthMeshCollision.kt:x + radius &lt; minX || x - radius > maxX || z + radius &lt; minZ || z - radius > maxZ</ID>
+    <ID>ComplexCondition:DepthMeshGeometry.kt:!valid[tl] || !valid[tr] || !valid[bl] || !valid[br]</ID>
+    <ID>ConstructorParameterNaming:ARSceneScope.kt:ARSceneScope$_nodes: SnapshotStateList&lt;NodeImpl></ID>
+    <ID>CyclomaticComplexMethod:ARSessionFailure.kt:ARSessionFailure.Companion$@JvmStatic public fun from: ARSessionFailure</ID>
+    <ID>CyclomaticComplexMethod:DepthMeshCollision.kt:@Suppress("UNUSED_PARAMETER") // y reserved for a future 3D variant — keep stable API internal fun nearestSurfaceYBelow: Float?</ID>
+    <ID>CyclomaticComplexMethod:LightEstimator.kt:LightEstimator$fun update: Estimation?</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:ARFogNodeTest.kt:ARFogNodeTest$(depth, density, start, end)</ID>
+    <ID>LongMethod:ARSessionFailureTest.kt:ARSessionFailureTest$@Test fun `from() maps every ARCore exception subclass to its typed ARSessionFailure subtype`</ID>
+    <ID>LongMethod:DepthMeshCollision.kt:@Suppress("UNUSED_PARAMETER") // y reserved for a future 3D variant — keep stable API internal fun nearestSurfaceYBelow: Float?</ID>
+    <ID>LongMethod:DepthMeshGeometry.kt:internal fun buildDepthMeshGeometry: DepthMeshGeometry</ID>
+    <ID>LongMethod:LightEstimator.kt:LightEstimator$fun update: Estimation?</ID>
+    <ID>LongMethod:LightEstimatorConcurrentDestroyTest.kt:LightEstimatorConcurrentDestroyTest$@Test fun `100 iterations of concurrent update + destroy at 50 percent — zero crashes`</ID>
+    <ID>LoopWithTooManyJumpStatements:DepthMeshCollision.kt:while</ID>
+    <ID>LoopWithTooManyJumpStatements:RerunBridge.kt:RerunBridge$while</ID>
+    <ID>LoopWithTooManyJumpStatements:XrHandNode.kt:for</ID>
+    <ID>MatchingDeclarationName:ARDepthOfField.kt:ARDepthOfFieldOptions</ID>
+    <ID>MatchingDeclarationName:ARFogNode.kt:ARFogConfig</ID>
+    <ID>MatchingDeclarationName:ArSession.kt:ARSession : Session</ID>
+    <ID>MatchingDeclarationName:CameraConfigFilterDsl.kt:CameraConfigFilterBuilder</ID>
+    <ID>MatchingDeclarationName:Geospatial.kt:GeospatialPoseSnapshot</ID>
+    <ID>MaxLineLength:ARCompletenessDefaultsTest.kt:ARCompletenessDefaultsTest$"""DisposableEffect\(fillLightNode\)\s*\{\s*fillLightNode\?\.let\s*\{\s*nodeManager\.addNode\(it\)\s*\}\s*onDispose\s*\{\s*fillLightNode\?\.let\s*\{\s*nodeManager\.removeNode\(it\)\s*\}\s*\}\s*\}"""</ID>
+    <ID>MaxLineLength:ARCompletenessDefaultsTest.kt:ARCompletenessDefaultsTest$"ARSceneView's fill-light wire-up MUST be a `DisposableEffect(fillLightNode) { add ; onDispose { remove } }` "</ID>
+    <ID>MaxLineLength:ARCompletenessDefaultsTest.kt:ARCompletenessDefaultsTest$val</ID>
+    <ID>MaxLineLength:ARCore.kt:ARCore$ReplaceWith("create(context, (context as? androidx.activity.ComponentActivity)?.let { ActivityARPermissionHandler(it) }, features)")</ID>
+    <ID>MaxLineLength:ARCore.kt:ARCore$ReplaceWith("resume(context, (context as? androidx.activity.ComponentActivity)?.let { ActivityARPermissionHandler(it) })")</ID>
+    <ID>MaxLineLength:ARSceneView.kt:@Deprecated("Use ARSceneView instead", ReplaceWith("ARSceneView(modifier, surfaceType, engine, modelLoader, materialLoader, environmentLoader, sessionFeatures, playbackDataset, sessionCameraConfig, flashMode, sessionConfiguration, planeRenderer, planeRendererVersion, cameraStream, view, isOpaque, renderer, scene, environment, mainLightNode, fillLightNode, cameraNode, cameraExposure, collisionSystem, viewNodeWindowManager, onSessionCreated, onSessionResumed, onSessionPaused, onSessionFailed, onPlaybackFailed, onSessionUpdated, onTrackingFailureChanged, onGestureListener, onTouchEvent, permissionHandler, lifecycle, content)"))</ID>
+    <ID>MaxLineLength:ARSceneView.kt:permissionHandler</ID>
+    <ID>MaxLineLength:ARTypedConfigModesTest.kt:ARTypedConfigModesTest$"""LaunchedEffect\($name\)\s*\{[^}]*session\.configure\s*\{\s*config\s*->\s*config\.$name\s*=\s*$name\s*\}"""</ID>
+    <ID>MaxLineLength:ARTypedConfigModesTest.kt:ARTypedConfigModesTest$"""planeFindingMode\s*:\s*Config\.PlaneFindingMode\s*=\s*Config\.PlaneFindingMode\.HORIZONTAL_AND_VERTICAL"""</ID>
+    <ID>MaxLineLength:ARTypedConfigModesTest.kt:ARTypedConfigModesTest$"""streetscapeGeometryMode\s*:\s*Config\.StreetscapeGeometryMode\s*=\s*Config\.StreetscapeGeometryMode\.DISABLED"""</ID>
+    <ID>MaxLineLength:DepthMeshNode.kt:DepthMeshNode$boundingBox = Box(0f, 0f, 0f, DEGENERATE_AABB_HALF_EXTENT_M, DEGENERATE_AABB_HALF_EXTENT_M, DEGENERATE_AABB_HALF_EXTENT_M)</ID>
+    <ID>MaxLineLength:RerunWireFormatEdgeCaseTest.kt:RerunWireFormatEdgeCaseTest$assertFalse("timestamp must not use 'E' notation", line.contains("E") &amp;&amp; line.indexOf("E") &lt; line.indexOf("\"type\""))</ID>
+    <ID>NestedBlockDepth:ARSceneView.kt:private fun onARFrame</ID>
+    <ID>NestedBlockDepth:LightEstimator.kt:LightEstimator$fun update: Estimation?</ID>
+    <ID>NestedBlockDepth:PlaneRenderer.kt:PlaneRenderer$override fun update</ID>
+    <ID>NestedBlockDepth:PlaneRendererV2.kt:PlaneRendererV2$override fun update</ID>
+    <ID>NewLineAtEndOfFile:ARCameraNode.kt:io.github.sceneview.ar.node.ARCameraNode.kt</ID>
+    <ID>NewLineAtEndOfFile:ARCameraStream.kt:io.github.sceneview.ar.camera.ARCameraStream.kt</ID>
+    <ID>NewLineAtEndOfFile:Anchor.kt:io.github.sceneview.ar.scene.Anchor.kt</ID>
+    <ID>NewLineAtEndOfFile:ArSession.kt:io.github.sceneview.ar.arcore.ArSession.kt</ID>
+    <ID>NewLineAtEndOfFile:AugmentedImage.kt:io.github.sceneview.ar.arcore.AugmentedImage.kt</ID>
+    <ID>NewLineAtEndOfFile:AugmentedImageNode.kt:io.github.sceneview.ar.node.AugmentedImageNode.kt</ID>
+    <ID>NewLineAtEndOfFile:Camera.kt:io.github.sceneview.ar.arcore.Camera.kt</ID>
+    <ID>NewLineAtEndOfFile:CloudAnchorNode.kt:io.github.sceneview.ar.node.CloudAnchorNode.kt</ID>
+    <ID>NewLineAtEndOfFile:Frame.kt:io.github.sceneview.ar.arcore.Frame.kt</ID>
+    <ID>NewLineAtEndOfFile:HitResultNode.kt:io.github.sceneview.ar.node.HitResultNode.kt</ID>
+    <ID>NewLineAtEndOfFile:LightEstimator.kt:io.github.sceneview.ar.light.LightEstimator.kt</ID>
+    <ID>NewLineAtEndOfFile:PlaneRenderer.kt:io.github.sceneview.ar.scene.PlaneRenderer.kt</ID>
+    <ID>NewLineAtEndOfFile:Pose.kt:io.github.sceneview.ar.arcore.Pose.kt</ID>
+    <ID>NewLineAtEndOfFile:RooftopAnchorNode.kt:io.github.sceneview.ar.node.RooftopAnchorNode.kt</ID>
+    <ID>NewLineAtEndOfFile:StreetscapeGeometryNode.kt:io.github.sceneview.ar.node.StreetscapeGeometryNode.kt</ID>
+    <ID>NewLineAtEndOfFile:TerrainAnchorNode.kt:io.github.sceneview.ar.node.TerrainAnchorNode.kt</ID>
+    <ID>NewLineAtEndOfFile:Trackable.kt:io.github.sceneview.ar.arcore.Trackable.kt</ID>
+    <ID>SwallowedException:ARRecorder.kt:ARRecorder$e: RuntimeException</ID>
+    <ID>SwallowedException:ARRecorder.kt:e: RuntimeException</ID>
+    <ID>SwallowedException:CameraConfigFilterDsl.kt:e: RuntimeException</ID>
+    <ID>SwallowedException:DepthMeshNodeUploadThrowLeakTest.kt:DepthMeshNodeUploadThrowLeakTest.ThrowingUploader$t: Throwable</ID>
+    <ID>TooGenericExceptionThrown:RerunRateLimiterTest.kt:RerunRateLimiterTest$throw RuntimeException("server thread failed: ${e.message}", e)</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:// Environment-aware AR fog (issue #1717). Parameter names match the // `camera_stream_depth.mat` declarations 1:1 so the Filament binding is a // straight pass-through. Defaults mirror `FogNode`'s virtual-fog defaults so // real + virtual fog visually align out of the box. const val kFogEnabledParameter = "fogEnabled"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:// People occlusion (issue #1761). The `personTexture` sampler holds the binary PERSON mask // derived from ARCore Scene Semantics — see `camera_stream_person_occlusion.mat`. const val kPersonTextureParameter = "personTexture"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kCameraTextureParameter = "cameraTexture"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kDepthTextureParameter = "depthTexture"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kFogColorParameter = "fogColor"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kFogDensityParameter = "fogDensity"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kFogEndParameter = "fogEnd"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kFogStartParameter = "fogStart"</ID>
+    <ID>TopLevelPropertyNaming:ARCameraStream.kt:const val kUVTransformParameter = "uvTransform"</ID>
+    <ID>TopLevelPropertyNaming:ARCore.kt:/** * Assumed distance in meters from the device camera to the surface on which the user will * try to place models. * * This value affects the apparent scale of objects while the tracking method of the Instant * Placement point is `SCREENSPACE_WITH_APPROXIMATE_DISTANCE`. Values in the [0.2, 2.0] meter * range are a good choice for most AR experiences. */ const val kDefaultHitTestInstantDistance = 2.0f</ID>
+    <ID>UnusedParameter:ARRecorderTest.kt:ARRecorderTest.ShadowCameraConfigFilter$direction: CameraConfig.FacingDirection?</ID>
+    <ID>UnusedParameter:ARRecorderTest.kt:ARRecorderTest.ShadowCameraConfigFilter$targetFps: java.util.EnumSet&lt;CameraConfig.TargetFps>?</ID>
+    <ID>UnusedParameter:ARSceneView.kt:/** * Used for [io.github.sceneview.node.ViewNode]s that can display an Android [android.view.View]. */ viewNodeWindowManager: WindowManager? = null</ID>
+    <ID>UnusedParameter:ARSceneView.kt:view: View</ID>
+    <ID>UnusedParameter:DepthMeshGeometryTest.kt:DepthMeshGeometryTest$width: Int</ID>
+    <ID>UnusedParameter:Frame.kt:trackable: T</ID>
+    <ID>UnusedParameter:LightEstimator.kt:LightEstimator$camera: Camera</ID>
+    <ID>UnusedParameter:RerunBridge.kt:RerunBridge$session: Session</ID>
+  </CurrentIssues>
+</SmellBaseline>

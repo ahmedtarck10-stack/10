@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">MIXED REALITY</string>
+    <string name="mode_object">Object</string>
+    <string name="mode_ar">AR</string>
+    <string name="mode_mr">MR</string>
+    <string name="action_photo">PHOTO</string>
+    <string name="action_rec">REC</string>
+    <string name="action_open">Open</string>
+    <string name="action_clear">Clear</string>
+</resources>

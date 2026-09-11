@@ -1,0 +1,292 @@
+[versions]
+# Build tools
+agp = "9.1.1"
+kotlin = "2.2.10"
+composeMultiplatform = "1.12.0"
+
+# AndroidX Core
+coreKtx = "1.18.0"
+appcompat = "1.8.0"
+fragmentKtx = "1.9.0"
+
+# Compose
+composeBom = "2026.06.01"
+composeMaterial3Expressive = "1.5.0-alpha27"
+activityCompose = "1.13.0"
+navigationCompose = "2.10.0"
+lifecycleRuntimeCompose = "2.10.0"
+
+# Kotlin Libraries
+coroutines = "1.11.0"
+kotlinMath = "1.8.0"
+
+# 3D / AR
+# Jetpack XR ARCore — preview SDK for hand & face tracking on Android XR
+# (headsets, glasses). Distinct runtime from mobile `com.google.ar:core`.
+# Wired as `compileOnly` in arsceneview/ so phone-only apps pay nothing
+# at runtime. See arsceneview/docs/JETPACK-XR-INTEGRATION.md for the
+# integration approach and slicing plan (issue #1738).
+jetpackXrArCore = "1.0.0-beta02"
+
+# Filament 1.72.1 — must match the material-binary version (MATERIAL_VERSION 72)
+# of the .filamat files committed under sceneview/src/main/assets/materials/ and
+# arsceneview/src/main/assets/materials/ (the ANDROID runtime track only; the two
+# web tracks have their own pins below).
+# Those were recompiled to material-binary version 71 in commit `efd296f1`
+# (Apr 11) when Filament was first bumped 1.70.2 → 1.71.0. The follow-up
+# `4a31b579` (May 11) reverted ONLY the runtime to 1.70.2 thinking the
+# .filamat were still v70 — they are not. That mismatch caused v4.1.0 to
+# SIGABRT at material-load on Lighting / Geometry / Animation / MovableLight /
+# MultiModel demos (Filament 1.70.2 cannot parse v71 packages). v4.1.1
+# restores the consistent pair: 1.71.0 runtime + v71 .filamat.
+# 1.71.1–1.71.5 were patch releases with no material-format version change
+# (no MATERIAL_VERSION bump) — the .filamat blobs compiled at 1.71.0 stayed
+# valid through 1.71.5.
+# 1.72.1 (#2590) DOES cross a material-format boundary: MATERIAL_VERSION 71 → 72.
+# All 26 committed .filamat blobs were recompiled with the matching matc 1.72.1
+# toolchain in the SAME change (bash tools/GenerateFilamat.sh) — the paired
+# runtime+blob update that the ABI invariant requires (1.72.1 landed on
+# repo1.maven.org, verified 2026-07-16).
+# Session #800 / #961 track future Filament bumps with the same paired-update
+# guarantee.
+filament = "1.72.1"
+# The WEB Filament runtime — MUST track the npm `filament` pin in
+# sceneview-web/build.gradle.kts (`npm("filament", ...)`) exactly. The Kotlin/JS
+# bundle runs against that npm build (staged by web-bundle-smoke.sh from the
+# Kotlin/JS build's node_modules), whose MATERIAL_VERSION is its minor digit
+# (1.52.x → v52) — a DIFFERENT track from the Android `filament` above (v72).
+# tools/GenerateFilamat.sh compiles the sceneview-web blobs (e.g. splat_web.mat,
+# #2646 P2) with the matc matching THIS version, so the web ABI invariant is
+# explicit and --check-able. Bumping the npm pin ⇒ bump this together and
+# regenerate the web blobs in the same PR (the CONTRIBUTING.md invariant,
+# applied to the web runtime).
+filamentWeb = "1.52.3"
+# The WEBSITE Filament runtime — MUST match the Filament.js build vendored at
+# website-static/js/filament/{filament.js,filament.wasm}, which is a THIRD track,
+# independent of both `filament` (Android, v72) and `filamentWeb` (npm, v52) —
+# it currently happens to sit on the same 1.72.1 release as the Android AAR,
+# but it moves on its own schedule (bumped 1.70.1 → 1.72.1 for #3456: 1.72.1 is
+# the first tagged release with google/filament#10116, the Embind `quatf`
+# registration that `LightManager.setShadowOptions` / `Builder.shadowOptions`
+# need; every earlier build threw UnboundTypeError on both).
+# tools/GenerateFilamat.sh compiles the website-static/materials/*.filamat blobs
+# with the matc matching THIS version (1.72.x → MATERIAL_VERSION 72), so the
+# static site could load them without the exact-version parse failure that made
+# v4.1.0 SIGABRT. Before #2783 those 3 blobs silently rode the Android pin and
+# were v72 against a v70 runtime — armed but never fired, because nothing on the
+# site calls createMaterial() yet.
+# The vendored bytes are pinned by sha256 in website-static/js/filament/
+# RUNTIME.json and gated by .claude/scripts/check-web-filamat-abi.sh, so swapping
+# the runtime without moving this pin (or vice versa) fails the quality gate.
+# Bumping the vendored Filament.js ⇒ bump this together and regenerate the 3
+# blobs in the same PR (the CONTRIBUTING.md invariant, applied to the site).
+filamentWebsite = "1.72.1"
+# Desktop Filament via filament-kmp on Maven. Independent of the three Filament
+# runtime pins above — this artifact vendors its own native Filament
+# (0.4.0 ships 1.75.0). Used only by sceneview-compose desktopMain.
+filamentKmp = "0.4.0"
+arCore = "1.54.0"
+
+# Networking
+fuel = "2.3.1"
+okhttp = "5.5.0"
+kotlinxSerialization = "1.11.0"
+
+# UI
+googleMaterial = "1.14.0"
+media3 = "1.11.0"
+
+# TV
+tvFoundation = "1.0.0"
+tvMaterial = "1.1.0"
+
+# Play Services
+playAppUpdate = "2.1.0"
+playServicesLocation = "21.4.0"
+playServicesNearby = "19.5.0"
+
+# ML Kit (object detection demo — see ARMLObjectLabelDemo, #1737)
+mlkitObjectDetection = "17.0.2"
+
+# ML Kit GenAI Prompt API (Point & Ask demo — see PointAndAskDemo, #2648).
+# Beta artifact: image+text prompts against Gemini Nano on-device via AICore.
+mlkitGenaiPrompt = "1.0.0-beta4"
+
+# MediaPipe Tasks Vision (body-tracking demo — see ARBodyTrackerDemo, #1763)
+# Bumped 0.20230731 → 0.10.26: pre-0.10.26 MediaPipe .so files have 4 KB ELF
+# PT_LOAD alignment which Google Play rejects since Jan 2026 (16 KB page-size
+# enforcement). 0.10.26 was the first release with 16 KB-aligned .so binaries
+# ("All the latest Android packages from Google Maven now supporting Android
+# 16kb page size"). Same root-cause as the v4.15.4 fix (#2214); that fix landed
+# on the release branch only and was never merged back to main — the
+# experimentalProperties "16k" anchor in build.gradle is a belt-and-suspenders
+# fallback for any remaining transitive 4 KB .so not covered by this bump.
+mediapipeTasksVision = "0.10.26"
+
+# Publishing & Docs
+mavenPublish = "0.37.0"
+dokka = "2.2.0"
+
+# Public-API surface tracking (#2723)
+# Kotlin binary-compatibility-validator — dumps the public ABI of the
+# published Android/KMP-JVM modules to committed `.api` files so any change
+# to a public signature is a reviewable diff (the `apiCheck` CI gate fails
+# a PR whose code no longer matches its committed dump). Validates the JVM
+# surface only: the `jvm("android")` dump of sceneview-core already captures
+# the shared commonMain API; native/JS klib ABI validation stays disabled
+# (experimental + not buildable on the ubuntu CI runner). See CONTRIBUTING.md
+# "Public API changes".
+binaryCompatibilityValidator = "0.18.2"
+
+# Testing
+androidxTestJunit = "1.3.0"
+androidxTestRunner = "1.7.0"
+androidxTestRules = "1.7.0"
+androidxTestExtJunit = "1.3.0"
+androidxTestUiAutomator = "2.4.0"
+robolectric = "4.16.1"
+roborazzi = "1.73.0"
+
+# Code Quality
+# detekt 2.0.0-alpha.0 (Sep 2025) is the first release built against Kotlin 2.x
+# (compiler-embeddable 2.2.10) and successfully registers tasks on the current
+# Kotlin 2.3.21 + Gradle 8.14.5 toolchain. detekt 1.23.8 silently no-ops its
+# task registration on Kotlin 2.3.x (see #1740). Later 2.0.0 alphas require
+# Gradle 9.x which would force an AGP / Compose Compiler chain upgrade.
+# IMPORTANT: detekt 2.x uses NEW plugin id "dev.detekt" + NEW artifact
+# coordinates "dev.detekt:detekt-gradle-plugin" (renamed from
+# io.gitlab.arturbosch.detekt).
+detekt = "2.0.0-alpha.6"
+
+[libraries]
+# AndroidX Core
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragmentKtx" }
+
+# Compose BOM (manages all Compose versions)
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+# JVM Compose layout assertions (Robolectric). Version comes from the BOM.
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+androidx-compose-material = { group = "androidx.compose.material", name = "material" }
+androidx-compose-material-icons = { group = "androidx.compose.material", name = "material-icons-core" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-compose-material3-expressive = { group = "androidx.compose.material3", name = "material3", version.ref = "composeMaterial3Expressive" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntimeCompose" }
+androidx-lifecycle-runtime-testing = { group = "androidx.lifecycle", name = "lifecycle-runtime-testing", version.ref = "lifecycleRuntimeCompose" }
+
+# Kotlin
+kotlin-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlin-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlin-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlin-math = { group = "dev.romainguy", name = "kotlin-math", version.ref = "kotlinMath" }
+
+# Filament
+filament-android = { group = "com.google.android.filament", name = "filament-android", version.ref = "filament" }
+filament-gltfio = { group = "com.google.android.filament", name = "gltfio-android", version.ref = "filament" }
+filament-utils = { group = "com.google.android.filament", name = "filament-utils-android", version.ref = "filament" }
+filament-kmp-compose = { group = "io.github.erkko68.filament", name = "filament-compose", version.ref = "filamentKmp" }
+filament-kmp-gltfio = { group = "io.github.erkko68.filament", name = "gltfio", version.ref = "filamentKmp" }
+
+# AR
+arcore = { group = "com.google.ar", name = "core", version.ref = "arCore" }
+
+# Jetpack XR ARCore (preview) — opt-in for headsets / glasses. Consumers add
+# this themselves; arsceneview/ wires it as compileOnly so non-XR apps don't
+# pull it. See arsceneview/docs/JETPACK-XR-INTEGRATION.md (#1738).
+androidx-xr-arcore = { group = "androidx.xr.arcore", name = "arcore", version.ref = "jetpackXrArCore" }
+
+# Fuel (HTTP client)
+fuel = { group = "com.github.kittinunf.fuel", name = "fuel", version.ref = "fuel" }
+fuel-android = { group = "com.github.kittinunf.fuel", name = "fuel-android", version.ref = "fuel" }
+fuel-coroutines = { group = "com.github.kittinunf.fuel", name = "fuel-coroutines", version.ref = "fuel" }
+
+# OkHttp (HTTP client used by Sketchfab service in android-demo)
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+# Call.executeAsync() — cooperatively-cancellable suspend calls. Cancelling the
+# coroutine aborts the socket, so a re-keyed Compose search effect no longer
+# leaks a completed-anyway request behind it (#2644). Same version as okhttp.
+okhttp-coroutines = { group = "com.squareup.okhttp3", name = "okhttp-coroutines", version.ref = "okhttp" }
+# MockWebServer — JVM-only test double for SketchfabService's cancellation
+# behaviour (#2644). Same okhttp version as the runtime client.
+mockwebserver3 = { group = "com.squareup.okhttp3", name = "mockwebserver3", version.ref = "okhttp" }
+
+# Kotlinx Serialization (JSON parsing for Sketchfab API responses)
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# Material
+google-material = { group = "com.google.android.material", name = "material", version.ref = "googleMaterial" }
+
+# Media
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+
+# TV
+androidx-tv-foundation = { group = "androidx.tv", name = "tv-foundation", version.ref = "tvFoundation" }
+androidx-tv-material = { group = "androidx.tv", name = "tv-material", version.ref = "tvMaterial" }
+
+# Play Services
+play-app-update = { group = "com.google.android.play", name = "app-update", version.ref = "playAppUpdate" }
+play-app-update-ktx = { group = "com.google.android.play", name = "app-update-ktx", version.ref = "playAppUpdate" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
+# Nearby Connections — backs the optional `NearbyCollaborativeTransport` reference
+# transport for collaborative AR (#2008). Declared `compileOnly` in `arsceneview`
+# so phone apps that don't use it never carry Play Services in their classpath.
+play-services-nearby = { group = "com.google.android.gms", name = "play-services-nearby", version.ref = "playServicesNearby" }
+
+# ML Kit Object Detection — bundled (offline-capable) model used by ARMLObjectLabelDemo.
+# The bundled artifact carries the detector weights inside the APK, so the demo works
+# without the on-device dynamic ML provider being available (#1737).
+mlkit-object-detection = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
+
+# ML Kit GenAI Prompt API — Gemini Nano on-device (image+text → text) through AICore.
+# No model weights in the APK: the model lives in the system AICore app. Demo-only
+# dependency for PointAndAskDemo (#2648).
+mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
+
+# Testing
+androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestRules" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExtJunit" }
+androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "androidxTestUiAutomator" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+roborazzi-rule = { group = "io.github.takahirom.roborazzi", name = "roborazzi-junit-rule", version.ref = "roborazzi" }
+
+# Gradle Plugins (for buildSrc / build-logic compileOnly)
+kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
+publish-gradlePlugin = { module = "com.vanniktech:gradle-maven-publish-plugin", version.ref = "mavenPublish" }
+
+# Code Quality
+# detekt 2.x uses dev.detekt:detekt-gradle-plugin (renamed from io.gitlab.arturbosch.detekt:detekt-gradle-plugin).
+detekt-gradlePlugin = { group = "dev.detekt", name = "detekt-gradle-plugin", version.ref = "detekt" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+# AGP 9 forbids `com.android.library` on a project that also applies the Kotlin
+# Multiplatform plugin. A KMP module with an Android target uses this plugin
+# instead, and declares the target as `kotlin { androidLibrary { } }`.
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
+publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
+binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binaryCompatibilityValidator" }
